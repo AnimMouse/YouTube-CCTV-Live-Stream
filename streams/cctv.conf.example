@@ -28,6 +28,11 @@ DURATION="12h"
 PRIVACY="unlisted"        # public | unlisted | private
 DESCRIPTION=""
 
+# Optional: add each broadcast to a playlist once it's live (from the playlist
+# URL: youtube.com/playlist?list=<PLAYLIST_ID>). Comma separate for several.
+# The playlist must belong to the same account as TOKEN_FILE.
+#PLAYLIST_ID="PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
 # ffmpeg options (arrays). Defaults match the original stream.sh.
 #FFMPEG_INPUT_ARGS=(-rtsp_transport tcp)
 #FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a libopus -b:a 96k)

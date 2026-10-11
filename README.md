@@ -9,7 +9,8 @@ every 12 hours (YouTube's DVR stops working after 12h). Broadcasts are titled
 1. Start ffmpeg and wait until YouTube reports the stream as `active`.
 2. Create a broadcast and bind it to the stream key's stream.
 3. Transition it `testing` → `live`.
-4. After `DURATION` live, transition it to `complete`, stop ffmpeg, and repeat.
+4. If `PLAYLIST_ID` is set, add the broadcast to that playlist.
+5. After `DURATION` live, transition it to `complete`, stop ffmpeg, and repeat.
 
 If ffmpeg crashes it's restarted within ~15s, and the broadcast stays live.
 If something fails (camera offline, API error), the broadcast is cleaned up
@@ -90,5 +91,5 @@ Logs: the script logs to stderr; ffmpeg output goes to `logs/<id>.ffmpeg.log`.
 ## API quota
 
 The YouTube Data API allows 10,000 units/day by default. Each broadcast costs
-about 270 units (create, bind, 3 transitions, status checks), so many cameras
-fit comfortably. While a camera is unreachable, no API calls are made.
+about 270 units (create, bind, 3 transitions, status checks), plus 50 per
+playlist, so many cameras fit comfortably. While a camera is unreachable, no API calls are made.

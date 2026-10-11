@@ -29,6 +29,7 @@ INGEST_URL=""           # optional; defaults to YouTube's HLS ingest for STREAM_
 DURATION="12h"          # length of each broadcast (e.g. 12h, 11h50m, 3600)
 PRIVACY="unlisted"      # public | unlisted | private
 DESCRIPTION=""
+PLAYLIST_ID=""          # optional; playlist(s) to add each broadcast to (comma separated)
 GO_LIVE_TIMEOUT=300     # seconds to wait for the stream/broadcast to become live
 POLL_INTERVAL=10        # seconds between status checks while waiting
 RETRY_DELAY=120         # seconds to wait before retrying a failed cycle
@@ -126,13 +127,30 @@ broadcast_status() {
     jq -r '.status.lifeCycleStatus // empty'
 }
 
+# Creates a broadcast; prints "<broadcast id> <channel id>".
 create_broadcast() {
   local title="$1" start
   start="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   yutu liveBroadcast insert --yes --output json \
     --title "$title" --description "$DESCRIPTION" \
     --privacyStatus "$PRIVACY" --scheduledStartTime "$start" |
-    first_item | jq -r '.id // empty'
+    first_item | jq -r 'select(.id) | "\(.id) \(.snippet.channelId // "")"'
+}
+
+# Adds the broadcast to each playlist in PLAYLIST_ID. Failures are only logged.
+add_to_playlists() {
+  local video_id="$1" channel_id="$2" playlist playlists
+  [[ -n "$PLAYLIST_ID" ]] || return 0
+  IFS=', ' read -ra playlists <<<"$PLAYLIST_ID"
+  for playlist in "${playlists[@]}"; do
+    [[ -n "$playlist" ]] || continue
+    if yutu playlistItem insert --yes --output silent --kind video \
+        --playlistId "$playlist" --channelId "$channel_id" --kVideoId "$video_id" >/dev/null; then
+      log "Added to playlist $playlist"
+    else
+      log "Could not add to playlist $playlist"
+    fi
+  done
 }
 
 transition() {
@@ -211,7 +229,7 @@ trap shutdown INT TERM
 
 # ---- one broadcast ---------------------------------------------------------
 run_cycle() {
-  local deadline title remaining
+  local deadline title remaining channel_id
 
   # Wait for the camera feed to reach YouTube before creating a broadcast, so a
   # camera outage only costs cheap status checks instead of API quota.
@@ -221,7 +239,7 @@ run_cycle() {
 
   title="$NAME ($(date '+%Y-%m-%d %H-%M'))"
   log "Creating broadcast \"$title\""
-  BROADCAST_ID="$(create_broadcast "$title")"
+  read -r BROADCAST_ID channel_id <<<"$(create_broadcast "$title")"
   [[ -n "$BROADCAST_ID" ]] || { log "Could not create broadcast"; return 1; }
   echo "$BROADCAST_ID" >"$STATE_FILE"
   log "Broadcast id: $BROADCAST_ID  https://youtu.be/$BROADCAST_ID"
@@ -238,6 +256,8 @@ run_cycle() {
   wait_for broadcast_status "live" "$BROADCAST_ID" || return 1
   deadline=$(( $(date +%s) + DURATION_SECS ))
   log "Broadcast is live; ending at $(date -d "@$deadline" '+%Y-%m-%d %H:%M:%S')"
+  # Added only once live, so failed attempts don't leave playlist entries behind.
+  add_to_playlists "$BROADCAST_ID" "$channel_id"
 
   while remaining=$(( deadline - $(date +%s) )); (( remaining > 0 )); do
     nap $(( remaining < 10 ? remaining : 10 ))
