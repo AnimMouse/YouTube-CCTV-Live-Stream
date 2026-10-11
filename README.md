@@ -38,7 +38,24 @@ Between broadcasts there's a gap of roughly 20–60s while the new one goes live
    ```
 
    Do this on a machine with a browser if the server has none, then copy both
-   JSON files over. Every stream shares the same token.
+   JSON files over.
+
+   **Multiple YouTube accounts:** create one token per account (sign in with
+   that account when the browser opens), then set `TOKEN_FILE` in each
+   camera's config:
+
+   ```sh
+   yutu auth --credential client_secret.json --cacheToken tokens/home.token.json
+   yutu auth --credential client_secret.json --cacheToken tokens/shop.token.json
+   ```
+
+   ```sh
+   TOKEN_FILE="tokens/shop.token.json"   # in streams/<camera>.conf
+   ```
+
+   Configs without `TOKEN_FILE` use `youtube.token.json`. One OAuth client
+   (`client_secret.json`) works for all accounts. If its consent screen is in
+   "Testing" mode, add each account as a test user.
 4. Create one config per camera:
 
    ```sh

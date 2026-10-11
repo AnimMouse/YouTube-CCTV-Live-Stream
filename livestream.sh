@@ -38,8 +38,10 @@ FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a libopus -b:a 96k)
 YUTU_BIN="yutu"
 LOG_DIR="$SCRIPT_DIR/logs"
 STATE_DIR="$SCRIPT_DIR/state"
-export YUTU_CREDENTIAL="${YUTU_CREDENTIAL:-$SCRIPT_DIR/client_secret.json}"
-export YUTU_CACHE_TOKEN="${YUTU_CACHE_TOKEN:-$SCRIPT_DIR/youtube.token.json}"
+# YouTube account: use a different TOKEN_FILE per account. Relative paths are
+# resolved against this script's folder.
+CREDENTIAL_FILE="client_secret.json"
+TOKEN_FILE="youtube.token.json"
 
 # shellcheck source=/dev/null
 source "$CONFIG"
@@ -51,6 +53,12 @@ for bin in ffmpeg jq "$YUTU_BIN"; do
   command -v "$bin" >/dev/null || { echo "Missing dependency: $bin" >&2; exit 1; }
 done
 
+abs_path() { [[ "$1" == /* ]] && echo "$1" || echo "$SCRIPT_DIR/$1"; }
+export YUTU_CREDENTIAL="$(abs_path "$CREDENTIAL_FILE")"
+export YUTU_CACHE_TOKEN="$(abs_path "$TOKEN_FILE")"
+[[ -f "$YUTU_CREDENTIAL" ]] || { echo "Credential file not found: $YUTU_CREDENTIAL" >&2; exit 1; }
+[[ -f "$YUTU_CACHE_TOKEN" ]] || { echo "Token file not found: $YUTU_CACHE_TOKEN (run: yutu auth --credential $YUTU_CREDENTIAL --cacheToken $YUTU_CACHE_TOKEN)" >&2; exit 1; }
+
 INGEST_URL="${INGEST_URL:-https://a.upload.youtube.com/http_upload_hls?cid=${STREAM_KEY}&copy=0&file=index.m3u8}"
 
 # A file-safe id for logs/state, derived from the config file name.
@@ -58,8 +66,9 @@ ID="$(basename "$CONFIG" .conf)"
 mkdir -p "$LOG_DIR" "$STATE_DIR"
 FFMPEG_LOG="$LOG_DIR/$ID.ffmpeg.log"
 STATE_FILE="$STATE_DIR/$ID.broadcast"
-# Shared by every instance so concurrent yutu calls don't race on the token file.
-YUTU_LOCK="$STATE_DIR/yutu.lock"
+# One lock per token file, so instances sharing an account don't race when
+# yutu refreshes the token.
+YUTU_LOCK="$STATE_DIR/yutu-$(printf '%s' "$YUTU_CACHE_TOKEN" | md5sum | cut -c1-12).lock"
 YUTU_ERR="$STATE_DIR/$ID.yutu.err"
 
 FFMPEG_PID=""

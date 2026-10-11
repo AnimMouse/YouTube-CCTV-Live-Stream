@@ -10,6 +10,12 @@ RTSP_URL="rtsp://admin:password@192.168.1.1/stream1"
 # YouTube Studio > Go live > Stream key (must be a different key per camera).
 STREAM_KEY="xxxx-xxxx-xxxx-xxxx-xxxx"
 
+# YouTube account to stream to. Create one token per account with:
+#   yutu auth --credential client_secret.json --cacheToken tokens/myaccount.token.json
+# Relative paths are resolved against the folder livestream.sh is in.
+#TOKEN_FILE="youtube.token.json"
+#CREDENTIAL_FILE="client_secret.json"
+
 # Optional: YouTube stream id; looked up from STREAM_KEY when empty.
 #STREAM_ID=""
 

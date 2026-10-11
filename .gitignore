@@ -7,3 +7,4 @@ streams/*.conf
 # Runtime output
 logs/
 state/
+tokens/
