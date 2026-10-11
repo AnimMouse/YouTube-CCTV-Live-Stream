@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#
+# Fake ffmpeg for tests. Logs start/stop events to $FAKE_DIR/ffmpeg.events.
+#   FAKE_FFMPEG_LIFE  seconds before it exits on its own (default: run forever);
+#                     0 simulates an unreachable camera.
+
+echo "start $$ $*" >>"$FAKE_DIR/ffmpeg.events"
+echo $$ >"$FAKE_DIR/ffmpeg.pid"
+trap 'echo "term $$" >>"$FAKE_DIR/ffmpeg.events"; exit 255' TERM
+# Short sleeps, so nothing lingers if this process is SIGKILLed.
+end=$(( $(date +%s) + ${FAKE_FFMPEG_LIFE:-999999} ))
+while (( $(date +%s) < end )); do
+  sleep 0.2 & wait $!
+done
+echo "exit $$" >>"$FAKE_DIR/ffmpeg.events"
+exit 1

@@ -34,6 +34,7 @@ GO_LIVE_TIMEOUT=300     # seconds to wait for the stream/broadcast to become liv
 POLL_INTERVAL=10        # seconds between status checks while waiting
 RETRY_DELAY=120         # seconds to wait before retrying a failed cycle
 FFMPEG_RESTART_DELAY=5  # seconds to wait before restarting a crashed ffmpeg
+FFMPEG_CHECK_INTERVAL=10 # seconds between ffmpeg health checks while live
 FFMPEG_INPUT_ARGS=(-rtsp_transport tcp)
 FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a libopus -b:a 96k)
 YUTU_BIN="yutu"
@@ -260,7 +261,7 @@ run_cycle() {
   add_to_playlists "$BROADCAST_ID" "$channel_id"
 
   while remaining=$(( deadline - $(date +%s) )); (( remaining > 0 )); do
-    nap $(( remaining < 10 ? remaining : 10 ))
+    nap $(( remaining < FFMPEG_CHECK_INTERVAL ? remaining : FFMPEG_CHECK_INTERVAL ))
     ensure_ffmpeg
   done
   return 0

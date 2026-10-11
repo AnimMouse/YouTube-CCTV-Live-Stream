@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# Fake yutu for tests. Records each call in $FAKE_DIR/calls and keeps each
+# broadcast's lifecycle status in $FAKE_DIR/broadcasts/<id>.
+#
+# Knobs (environment variables):
+#   FAKE_STREAM_STATUS   streamStatus to report (default: active while a fake
+#                        ffmpeg is running, like YouTube receiving video)
+#   FAKE_NO_STREAM=1     no live stream matches the stream key
+#   FAKE_REJECT_TESTING=1  reject the "testing" transition (stream monitor off)
+#   FAKE_STUCK=1         "testing" is accepted but never leaves testStarting
+#   FAKE_FAIL_PLAYLIST   playlist id whose playlistItem insert fails
+
+set -u
+D="$FAKE_DIR"
+mkdir -p "$D/broadcasts"
+echo "$* | token=${YUTU_CACHE_TOKEN:-} credential=${YUTU_CREDENTIAL:-}" >>"$D/calls"
+
+flag() {
+  local name="--$1"; shift
+  while [[ $# -gt 0 ]]; do
+    [[ "$1" == "$name" ]] && { echo "$2"; return; }
+    shift
+  done
+}
+fail() { echo "Error: $*" >&2; echo "Usage: yutu ..."; exit 1; }
+
+cmd="$1 $2"; shift 2
+case "$cmd" in
+  "liveStream list")
+    if [[ " $* " == *" --mine "* ]]; then
+      [[ "${FAKE_NO_STREAM:-}" == 1 ]] && { echo '[]'; exit 0; }
+      echo '[{"id":"S1","cdn":{"ingestionInfo":{"streamName":"TEST-KEY"}}},{"id":"S2","cdn":{"ingestionInfo":{"streamName":"OTHER"}}}]'
+    else
+      status="${FAKE_STREAM_STATUS:-}"
+      if [[ -z "$status" ]]; then
+        status=inactive
+        pid="$(cat "$D/ffmpeg.pid" 2>/dev/null)"
+        [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && status=active
+      fi
+      echo "[{\"id\":\"$(flag ids "$@")\",\"status\":{\"streamStatus\":\"$status\"}}]"
+    fi
+    ;;
+  "liveBroadcast insert")
+    [[ " $* " == *" --yes "* ]] || fail "operation not confirmed"
+    n=$(( $(cat "$D/counter" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" >"$D/counter"
+    echo ready >"$D/broadcasts/B$n"
+    echo "{\"id\":\"B$n\",\"snippet\":{\"title\":\"$(flag title "$@")\",\"channelId\":\"UC-TEST\"}}"
+    ;;
+  "liveBroadcast bind")
+    [[ " $* " == *" --yes "* ]] || fail "operation not confirmed"
+    ;;
+  "liveBroadcast transition")
+    [[ " $* " == *" --yes "* ]] || fail "operation not confirmed"
+    id="$(flag ids "$@")" to="$(flag broadcastStatus "$@")"
+    from="$(cat "$D/broadcasts/$id" 2>/dev/null)"
+    case "$to:$from" in
+      testing:ready)
+        [[ "${FAKE_REJECT_TESTING:-}" == 1 ]] && fail "invalidTransition"
+        [[ "${FAKE_STUCK:-}" == 1 ]] && to=testStarting ;;
+      live:testing) ;;
+      live:ready) [[ "${FAKE_REJECT_TESTING:-}" == 1 ]] || fail "invalidTransition" ;;
+      complete:testing|complete:live) ;;
+      *) fail "invalidTransition ($from -> $to)" ;;
+    esac
+    echo "$to" >"$D/broadcasts/$id"
+    ;;
+  "liveBroadcast list")
+    id="$(flag ids "$@")"
+    echo "[{\"id\":\"$id\",\"status\":{\"lifeCycleStatus\":\"$(cat "$D/broadcasts/$id" 2>/dev/null)\"}}]"
+    ;;
+  "liveBroadcast delete")
+    [[ " $* " == *" --yes "* ]] || fail "operation not confirmed"
+    rm -f "$D/broadcasts/$(flag ids "$@")"
+    ;;
+  "playlistItem insert")
+    [[ " $* " == *" --yes "* ]] || fail "operation not confirmed"
+    [[ -n "$(flag channelId "$@")" ]] || fail "required flag channelId not set"
+    [[ "$(flag playlistId "$@")" == "${FAKE_FAIL_PLAYLIST:-}" ]] && fail "playlistNotFound"
+    ;;
+  *) fail "unexpected command: $cmd" ;;
+esac
+exit 0

@@ -93,3 +93,9 @@ Logs: the script logs to stderr; ffmpeg output goes to `logs/<id>.ffmpeg.log`.
 The YouTube Data API allows 10,000 units/day by default. Each broadcast costs
 about 270 units (create, bind, 3 transitions, status checks), plus 50 per
 playlist, so many cameras fit comfortably. While a camera is unreachable, no API calls are made.
+
+## Development
+
+`test/run.sh` runs the script against fake `yutu`/`ffmpeg` (in `test/bin/`),
+so changes can be tested without a YouTube account. See `CLAUDE.md` for
+implementation notes.

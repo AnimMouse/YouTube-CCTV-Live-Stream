@@ -10,6 +10,7 @@ User-facing docs are in `README.md`.
 - `livestream.sh`: everything. One process per camera config, run as `./livestream.sh streams/<id>.conf`.
 - `streams/cctv.conf.example`: documents every config option. Real `streams/*.conf` are gitignored.
 - `livestream@.service`: systemd template, one instance per config (`livestream@<id>`).
+- `test/`: `run.sh` (test cases) and `bin/` (fake `yutu` and `ffmpeg`). See Testing.
 
 ## Behaviour that must be preserved
 
@@ -42,10 +43,16 @@ User-facing docs are in `README.md`.
 
 ## Testing
 
-There's no test suite, and real runs need a YouTube account. To verify changes
-without one, put stub `yutu` and `ffmpeg` executables first on `PATH`:
+```sh
+test/run.sh                  # all cases, ~1 minute
+test/run.sh rotation shutdown  # selected cases
+```
 
-- The `yutu` stub records its arguments and returns JSON shaped like the real API (`[{"id":…,"status":{"streamStatus":"active"}}]` for lists, `{"id":…,"snippet":{"channelId":…}}` for insert), keeping each broadcast's lifecycle status in a temp dir.
-- The `ffmpeg` stub sleeps and traps TERM. Make it exit early to simulate crashes or an unreachable camera.
+Tests run `livestream.sh` against fakes in `test/bin/` (put first on `PATH`), so no YouTube account is needed:
 
-Run the script with a test config that sets a short duration (`DURATION="10s"`, `POLL_INTERVAL=1`) and temp `LOG_DIR`/`STATE_DIR`. Then check the recorded yutu calls and the log, and send SIGTERM to check the shutdown path. Run `bash -n livestream.sh` (and `shellcheck` if available) after edits.
+- `test/bin/yutu` records every call in `$FAKE_DIR/calls`, returns JSON shaped like the real API, and enforces the real transition rules (`ready→testing→live→complete`; anything else fails like the API). It requires `--yes` on mutating commands. It reports the stream `active` only while a fake ffmpeg is running. Behaviour knobs (`FAKE_STREAM_STATUS`, `FAKE_REJECT_TESTING`, `FAKE_STUCK`, `FAKE_FAIL_PLAYLIST`, `FAKE_NO_STREAM`) are documented at the top of the file.
+- `test/bin/ffmpeg` logs `start`/`term`/`exit` events to `$FAKE_DIR/ffmpeg.events`. `FAKE_FFMPEG_LIFE=<s>` makes it exit early (crash), and `0` simulates an unreachable camera.
+- Each case in `test/run.sh` (`case_<name>`) gets a temp dir with a config using short timeouts (`POLL_INTERVAL=1`, `FFMPEG_CHECK_INTERVAL=1`, etc.). Extra config lines are passed to `setup` on stdin. Cases assert on the recorded calls (`actions` condenses them to e.g. `transition B1 live`), the ffmpeg events and the script output. `finish` also fails a case that leaves an ffmpeg running.
+- Failed cases keep their temp dir and print its path.
+
+When changing behaviour, add or update a case. Run `bash -n livestream.sh` (and `shellcheck` if available) after edits. Real YouTube behaviour can still differ from the fakes, so changes to the API flow need a real run before release.
