@@ -1,0 +1,9 @@
+# Secrets: OAuth client, cached token, per-camera configs (RTSP passwords, stream keys)
+client_secret*.json
+youtube.token.json
+*.token.json
+streams/*.conf
+
+# Runtime output
+logs/
+state/

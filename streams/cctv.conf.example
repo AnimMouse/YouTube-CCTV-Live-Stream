@@ -1,0 +1,34 @@
+# Copy to streams/<id>.conf (e.g. streams/frontdoor.conf), one file per camera.
+# Each config needs its own YouTube stream key. This file holds passwords:
+#   chmod 600 streams/*.conf
+
+# Used in broadcast titles: "CCTV (2026-08-30 10-30)"
+NAME="CCTV"
+
+RTSP_URL="rtsp://admin:password@192.168.1.1/stream1"
+
+# YouTube Studio > Go live > Stream key (must be a different key per camera).
+STREAM_KEY="xxxx-xxxx-xxxx-xxxx-xxxx"
+
+# Optional: YouTube stream id; looked up from STREAM_KEY when empty.
+#STREAM_ID=""
+
+# Optional: ingest URL. Defaults to YouTube's HLS ingest for STREAM_KEY.
+#INGEST_URL="rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
+
+# Length of each broadcast before it's ended and a new one starts.
+DURATION="12h"
+
+PRIVACY="unlisted"        # public | unlisted | private
+DESCRIPTION=""
+
+# ffmpeg options (arrays). Defaults match the original stream.sh.
+#FFMPEG_INPUT_ARGS=(-rtsp_transport tcp)
+#FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a libopus -b:a 96k)
+
+# If you set INGEST_URL to RTMP, use an RTMP-compatible format and codec, e.g.:
+#FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a aac -b:a 128k -f flv)
+
+# Timeouts (seconds)
+#GO_LIVE_TIMEOUT=300
+#RETRY_DELAY=120

@@ -1,0 +1,25 @@
+# systemd template: one instance per streams/<id>.conf
+#
+#   sudo cp livestream@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now livestream@cctv livestream@frontdoor
+#   journalctl -u livestream@cctv -f
+#
+# Edit User= and the paths below to match where this folder lives.
+
+[Unit]
+Description=YouTube livestream %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=vscode
+WorkingDirectory=/opt/yt-livestream
+ExecStart=/opt/yt-livestream/livestream.sh /opt/yt-livestream/streams/%i.conf
+Restart=always
+RestartSec=30
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
