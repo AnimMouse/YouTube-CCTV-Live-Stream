@@ -22,8 +22,8 @@ setup() {
   T="$(mktemp -d)"
   export FAKE_DIR="$T/fake"
   mkdir -p "$FAKE_DIR" "$T/streams" "$T/state"
-  echo '{}' >"$T/client_secret.json"
-  echo '{}' >"$T/token.json"
+  echo '{"installed":{"client_id":"CLIENT-ID","client_secret":"CS-SECRET"}}' >"$T/client_secret.json"
+  echo '{"access_token":"old","refresh_token":"RT-SECRET","expiry":"2020-01-01T00:00:00Z"}' >"$T/token.json"
   touch "$FAKE_DIR/calls" "$FAKE_DIR/ffmpeg.events"
   cat >"$T/streams/cam.conf" <<EOF
 NAME="CCTV"
@@ -71,7 +71,8 @@ actions() {
     /liveBroadcast bind/       { print "bind" }
     /liveBroadcast delete/     { for (i=1;i<=NF;i++) if ($i=="--ids") print "delete " $(i+1) }
     /liveBroadcast transition/ { id=""; st=""; for (i=1;i<=NF;i++) { if ($i=="--ids") id=$(i+1); if ($i=="--broadcastStatus") st=$(i+1) } print "transition " id " " st }
-    /playlistItem insert/      { for (i=1;i<=NF;i++) if ($i=="--playlistId") print "playlist " $(i+1) }'
+    /playlistItem insert/      { for (i=1;i<=NF;i++) if ($i=="--playlistId") print "playlist " $(i+1) }
+    /^curl PUT .*liveBroadcasts/ { print "settings" }'
 }
 
 finish() {
@@ -230,6 +231,86 @@ case_relative_token_path() {
   setup relative_token_path <<<'TOKEN_FILE="does-not-exist.token.json"'
   run_to_exit
   output_has "Token file not found: $(cd "$TEST_DIR/.." && pwd)/does-not-exist.token.json"
+  finish
+}
+
+case_latency_and_captions() {
+  setup latency_and_captions <<<'LATENCY="low"
+CAPTIONS="embedded"'
+  run_for 3
+  expect "$(actions | head -5 | paste -sd,)" \
+    "insert,settings,bind,transition B1 testing,transition B1 live" "settings applied before bind"
+  local put="$FAKE_DIR/put.json"
+  expect "$(jq -r .id "$put")" B1 "updated broadcast"
+  expect "$(jq -r .contentDetails.latencyPreference "$put")" low "latencyPreference"
+  expect "$(jq -r .contentDetails.closedCaptionsType "$put")" closedCaptionsEmbedded "closedCaptionsType"
+  # Existing settings are kept; read-only and deprecated fields are dropped.
+  expect "$(jq -c '.contentDetails | [.enableDvr, .monitorStream.enableMonitorStream, .recordFromStart]' "$put")" \
+    "[true,true,true]" "existing contentDetails preserved"
+  expect "$(jq -c '.contentDetails | [has("boundStreamId"), has("enableClosedCaptions")]' "$put")" \
+    "[false,false]" "read-only/deprecated fields removed"
+  grep -q 'client_id=CLIENT-ID&client_secret=CS-SECRET&refresh_token=RT-SECRET&grant_type=refresh_token' \
+    "$FAKE_DIR/token.form" || fail "token refresh form"
+  grep '^curl ' "$FAKE_DIR/calls" | grep -q -E 'SECRET' && fail "secret visible in curl arguments"
+  grep -q '"access_token":"old"' "$T/token.json" || fail "token file was modified"
+  output_has "Applied settings: latency=low captions=embedded"
+  finish
+}
+
+case_latency_only() {
+  setup latency_only <<<'LATENCY="ultraLow"'
+  run_for 3
+  expect "$(jq -r .contentDetails.latencyPreference "$FAKE_DIR/put.json")" ultraLow "latencyPreference"
+  expect "$(jq -r .contentDetails.closedCaptionsType "$FAKE_DIR/put.json")" closedCaptionsDisabled "captions untouched"
+  finish
+}
+
+case_no_settings_no_api_calls() {
+  setup no_settings_no_api_calls </dev/null
+  run_for 3
+  expect "$(calls '^curl ')" 0 "direct API calls"
+  output_has "Broadcast is live"
+  finish
+}
+
+case_settings_failure_keeps_streaming() {
+  setup settings_failure_keeps_streaming <<<'LATENCY="low"'
+  export FAKE_API_FAIL=1
+  run_for 3
+  unset FAKE_API_FAIL
+  output_has "YouTube API PUT liveBroadcasts failed: Invalid latency preference."
+  output_has "Continuing with YouTube's default"
+  output_has "Broadcast is live"
+  expect "$(calls 'liveBroadcast delete')" 0 "broadcast kept"
+  finish
+}
+
+case_token_refresh_failure() {
+  setup token_refresh_failure <<<'CAPTIONS="http"'
+  export FAKE_TOKEN_FAIL=1
+  run_for 3
+  unset FAKE_TOKEN_FAIL
+  output_has "Could not refresh the access token"
+  expect "$(calls '^curl PUT')" 0 "updates without a token"
+  output_has "Broadcast is live"
+  finish
+}
+
+case_invalid_settings() {
+  setup invalid_settings <<<'LATENCY="fast"'
+  run_to_exit
+  expect "$RC" 1 "exit code (bad LATENCY)"
+  output_has "Invalid LATENCY"
+  cat >>"$T/streams/cam.conf" <<<'LATENCY=""
+CAPTIONS="yes"'
+  run_to_exit
+  expect "$RC" 1 "exit code (bad CAPTIONS)"
+  output_has "Invalid CAPTIONS"
+  cat >>"$T/streams/cam.conf" <<<'LATENCY="ultraLow"
+CAPTIONS="embedded"'
+  run_to_exit
+  expect "$RC" 1 "exit code (ultraLow + captions)"
+  output_has "doesn't support closed captions with ultra low latency"
   finish
 }
 

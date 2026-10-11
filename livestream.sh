@@ -30,6 +30,8 @@ DURATION="12h"          # length of each broadcast (e.g. 12h, 11h50m, 3600)
 PRIVACY="unlisted"      # public | unlisted | private
 DESCRIPTION=""
 PLAYLIST_ID=""          # optional; playlist(s) to add each broadcast to (comma separated)
+LATENCY=""              # optional; normal | low | ultraLow (empty: YouTube default, normal)
+CAPTIONS=""             # optional; disabled | embedded | http (empty: YouTube default, disabled)
 GO_LIVE_TIMEOUT=300     # seconds to wait for the stream/broadcast to become live
 POLL_INTERVAL=10        # seconds between status checks while waiting
 RETRY_DELAY=120         # seconds to wait before retrying a failed cycle
@@ -51,7 +53,24 @@ source "$CONFIG"
 [[ -n "$NAME" ]]       || { echo "NAME is not set in $CONFIG" >&2; exit 1; }
 [[ -n "$RTSP_URL" ]]   || { echo "RTSP_URL is not set in $CONFIG" >&2; exit 1; }
 [[ -n "$STREAM_KEY" || -n "$INGEST_URL" ]] || { echo "STREAM_KEY is not set in $CONFIG" >&2; exit 1; }
-for bin in ffmpeg jq "$YUTU_BIN"; do
+case "$LATENCY" in
+  ""|normal|low|ultraLow) ;;
+  *) echo "Invalid LATENCY: $LATENCY (use normal, low or ultraLow)" >&2; exit 1 ;;
+esac
+case "$CAPTIONS" in
+  "")       CAPTIONS_TYPE="" ;;
+  disabled) CAPTIONS_TYPE="closedCaptionsDisabled" ;;
+  embedded) CAPTIONS_TYPE="closedCaptionsEmbedded" ;;
+  http)     CAPTIONS_TYPE="closedCaptionsHttpPost" ;;
+  *) echo "Invalid CAPTIONS: $CAPTIONS (use disabled, embedded or http)" >&2; exit 1 ;;
+esac
+if [[ "$LATENCY" == ultraLow && ( "$CAPTIONS" == embedded || "$CAPTIONS" == http ) ]]; then
+  echo "YouTube doesn't support closed captions with ultra low latency" >&2; exit 1
+fi
+
+deps=(ffmpeg jq "$YUTU_BIN")
+[[ -n "$LATENCY$CAPTIONS" ]] && deps+=(curl)
+for bin in "${deps[@]}"; do
   command -v "$bin" >/dev/null || { echo "Missing dependency: $bin" >&2; exit 1; }
 done
 
@@ -154,6 +173,54 @@ add_to_playlists() {
   done
 }
 
+# yutu can't set contentDetails (latency, captions), so those go straight to
+# the YouTube API with an access token refreshed from TOKEN_FILE. The new token
+# isn't written back, so this never races with yutu over the token file.
+access_token() {
+  local form
+  form="$(jq -rn --slurpfile cred "$YUTU_CREDENTIAL" --slurpfile tok "$YUTU_CACHE_TOKEN" '
+    ($cred[0].installed // $cred[0].web) as $c
+    | "client_id=\($c.client_id | @uri)&client_secret=\($c.client_secret | @uri)" +
+      "&refresh_token=\($tok[0].refresh_token | @uri)&grant_type=refresh_token"' 2>/dev/null)" ||
+    { log "Could not read client id/secret or refresh token"; return 1; }
+  # Secrets go through stdin, not arguments, so they don't show up in `ps`.
+  curl -sS --fail-with-body --data @- https://oauth2.googleapis.com/token <<<"$form" 2>&1 |
+    jq -r '.access_token // empty' 2>/dev/null | grep . ||
+    { log "Could not refresh the access token"; return 1; }
+}
+
+# youtube_api METHOD PATH TOKEN [JSON_BODY]
+youtube_api() {
+  local out body_args=()
+  [[ -n "${4:-}" ]] && body_args=(-H 'Content-Type: application/json' --data-binary "$4")
+  # The token is passed via a file descriptor so it doesn't show up in `ps`.
+  if ! out="$(curl -sS --fail-with-body -X "$1" \
+      -H @<(printf 'Authorization: Bearer %s\n' "$3") "${body_args[@]}" \
+      "https://www.googleapis.com/youtube/v3/$2" 2>&1)"; then
+    log "YouTube API $1 ${2%%\?*} failed: $(jq -r '.error.message // empty' <<<"$out" 2>/dev/null || head -c 200 <<<"$out")"
+    return 1
+  fi
+  printf '%s\n' "$out"
+}
+
+# Applies LATENCY/CAPTIONS to a broadcast. The update replaces all of
+# contentDetails, so the current values are fetched and merged first.
+set_broadcast_settings() {
+  local id="$1" token current body
+  [[ -n "$LATENCY$CAPTIONS_TYPE" ]] || return 0
+  token="$(access_token)" || return 1
+  current="$(youtube_api GET "liveBroadcasts?part=contentDetails&id=$id" "$token")" || return 1
+  body="$(jq -c --arg id "$id" --arg latency "$LATENCY" --arg captions "$CAPTIONS_TYPE" '
+    .items[0].contentDetails // empty
+    | del(.boundStreamId, .boundStreamLastUpdateTimeMs)
+    | if $latency != "" then .latencyPreference = $latency else . end
+    | if $captions != "" then .closedCaptionsType = $captions | del(.enableClosedCaptions) else . end
+    | {id: $id, contentDetails: .}' <<<"$current")"
+  [[ -n "$body" ]] || { log "Broadcast $id not found when applying settings"; return 1; }
+  youtube_api PUT "liveBroadcasts?part=contentDetails" "$token" "$body" >/dev/null || return 1
+  log "Applied settings:${LATENCY:+ latency=$LATENCY}${CAPTIONS:+ captions=$CAPTIONS}"
+}
+
 transition() {
   yutu liveBroadcast transition --yes --output silent --ids "$1" --broadcastStatus "$2" >/dev/null
 }
@@ -244,6 +311,11 @@ run_cycle() {
   [[ -n "$BROADCAST_ID" ]] || { log "Could not create broadcast"; return 1; }
   echo "$BROADCAST_ID" >"$STATE_FILE"
   log "Broadcast id: $BROADCAST_ID  https://youtu.be/$BROADCAST_ID"
+
+  # Must happen before going live (latency can't change after). A failure is
+  # only logged: the stream still works with YouTube's defaults, and retrying
+  # the cycle would cost quota on every attempt.
+  set_broadcast_settings "$BROADCAST_ID" || log "Continuing with YouTube's default latency/captions"
 
   yutu liveBroadcast bind --yes --output silent --ids "$BROADCAST_ID" --streamId "$STREAM_ID" >/dev/null ||
     { log "Could not bind broadcast to stream $STREAM_ID"; return 1; }

@@ -33,6 +33,16 @@ DESCRIPTION=""
 # The playlist must belong to the same account as TOKEN_FILE.
 #PLAYLIST_ID="PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
+# Optional: stream latency. normal (default) | low | ultraLow
+# Lower latency means less delay but more buffering for viewers on slow
+# connections. ultraLow doesn't support closed captions.
+#LATENCY="normal"
+
+# Optional: closed captions. disabled (default) | embedded | http
+#   embedded: captions embedded in the video stream (CEA-608/708)
+#   http:     captions sent separately over HTTP POST
+#CAPTIONS="disabled"
+
 # ffmpeg options (arrays). Defaults match the original stream.sh.
 #FFMPEG_INPUT_ARGS=(-rtsp_transport tcp)
 #FFMPEG_OUTPUT_ARGS=(-c:v copy -c:a libopus -b:a 96k)

@@ -7,7 +7,8 @@ every 12 hours (YouTube's DVR stops working after 12h). Broadcasts are titled
 ## How a cycle works
 
 1. Start ffmpeg and wait until YouTube reports the stream as `active`.
-2. Create a broadcast and bind it to the stream key's stream.
+2. Create a broadcast, apply `LATENCY`/`CAPTIONS` if set, and bind it to the
+   stream key's stream.
 3. Transition it `testing` → `live`.
 4. If `PLAYLIST_ID` is set, add the broadcast to that playlist.
 5. After `DURATION` live, transition it to `complete`, stop ffmpeg, and repeat.
@@ -67,6 +68,20 @@ Between broadcasts there's a gap of roughly 20–60s while the new one goes live
    Each camera needs its **own stream key**. Create extra keys in YouTube
    Studio → Go live → Stream → "Create new stream key".
 
+## Latency and closed captions
+
+Set these per camera in its config:
+
+```sh
+LATENCY="low"          # normal (default) | low | ultraLow
+CAPTIONS="embedded"    # disabled (default) | embedded | http
+```
+
+yutu can't set these yet, so the script calls the YouTube API directly with
+`curl`, using a short-lived access token refreshed from the same token file.
+If applying them fails, the broadcast still goes live with YouTube's defaults
+and the error is logged. YouTube doesn't support captions with `ultraLow`.
+
 ## Running
 
 ```sh
@@ -92,10 +107,11 @@ Logs: the script logs to stderr; ffmpeg output goes to `logs/<id>.ffmpeg.log`.
 
 The YouTube Data API allows 10,000 units/day by default. Each broadcast costs
 about 270 units (create, bind, 3 transitions, status checks), plus 50 per
-playlist, so many cameras fit comfortably. While a camera is unreachable, no API calls are made.
+playlist and 51 when `LATENCY`/`CAPTIONS` are set, so many cameras fit
+comfortably. While a camera is unreachable, no API calls are made.
 
 ## Development
 
-`test/run.sh` runs the script against fake `yutu`/`ffmpeg` (in `test/bin/`),
+`test/run.sh` runs the script against fake `yutu`/`ffmpeg`/`curl` (in `test/bin/`),
 so changes can be tested without a YouTube account. See `CLAUDE.md` for
 implementation notes.

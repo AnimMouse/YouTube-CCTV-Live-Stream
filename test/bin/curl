@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# Fake curl for tests: Google's OAuth token endpoint and the YouTube
+# liveBroadcasts API (GET/PUT contentDetails). Records each request in
+# $FAKE_DIR/calls as "curl <METHOD> <url> args=<args>", PUT bodies in
+# $FAKE_DIR/put.json and the token form in $FAKE_DIR/token.form.
+#
+# Knobs (environment variables):
+#   FAKE_TOKEN_FAIL=1   the token refresh fails
+#   FAKE_API_FAIL=1     the PUT fails with a YouTube-style error
+
+set -u
+D="$FAKE_DIR"
+method=GET url="" auth="" body="" stdin_data=0 args="$*"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -X) method="$2"; shift ;;
+    -H) [[ "$2" == @* ]] && h="$(cat "${2#@}")" || h="$2"
+        [[ "$h" == Authorization:* ]] && auth="$h" ;;
+    --data) [[ "$2" == @- ]] && stdin_data=1 || body="$2"; method=POST ;;
+    --data-binary) body="$2"; [[ "$method" == GET ]] && method=POST ;;
+    -*) ;;
+    *) url="$1" ;;
+  esac
+  shift
+done
+echo "curl $method $url args=$args" >>"$D/calls"
+
+error() { echo "{\"error\":{\"code\":$1,\"message\":\"$2\"}}"; exit 22; }
+
+case "$url" in
+  https://oauth2.googleapis.com/token)
+    (( stdin_data )) && cat >"$D/token.form"
+    [[ "${FAKE_TOKEN_FAIL:-}" == 1 ]] && error 400 "invalid_grant"
+    grep -q 'refresh_token=RT-SECRET' "$D/token.form" || error 400 "missing refresh token"
+    echo '{"access_token":"AT-SECRET","expires_in":3599,"token_type":"Bearer"}'
+    ;;
+  https://www.googleapis.com/youtube/v3/liveBroadcasts*)
+    [[ "$auth" == "Authorization: Bearer AT-SECRET" ]] || error 401 "Invalid Credentials"
+    if [[ "$method" == GET ]]; then
+      id="${url##*id=}"
+      [[ -f "$D/broadcasts/$id" ]] || { echo '{"items":[]}'; exit 0; }
+      echo "{\"items\":[{\"id\":\"$id\",\"contentDetails\":{\"monitorStream\":{\"enableMonitorStream\":true,\"broadcastStreamDelayMs\":0},\"enableDvr\":true,\"enableEmbed\":true,\"recordFromStart\":true,\"enableClosedCaptions\":false,\"closedCaptionsType\":\"closedCaptionsDisabled\",\"latencyPreference\":\"normal\",\"boundStreamId\":\"S1\",\"boundStreamLastUpdateTimeMs\":\"2026-01-01T00:00:00Z\"}}]}"
+    else
+      [[ "${FAKE_API_FAIL:-}" == 1 ]] && error 400 "Invalid latency preference."
+      printf '%s\n' "$body" >"$D/put.json"
+      printf '%s\n' "$body"
+    fi
+    ;;
+  *) echo "fake curl: unexpected url $url" >&2; exit 6 ;;
+esac
