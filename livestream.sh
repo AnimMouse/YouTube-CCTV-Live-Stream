@@ -2,7 +2,7 @@
 #
 # livestream.sh - stream an RTSP camera to YouTube in back-to-back broadcasts.
 #
-# Each broadcast is ended after DURATION (default 12h, so YouTube's DVR keeps
+# Each broadcast is ended after DURATION (default 11h55m, so YouTube's DVR keeps
 # working) and a new one is created right away, titled "<NAME> (yyyy-mm-dd hh-mm)".
 #
 # Usage:   ./livestream.sh streams/cctv.conf
@@ -26,7 +26,7 @@ RTSP_URL=""
 STREAM_KEY=""
 STREAM_ID=""            # optional; looked up from STREAM_KEY when empty
 INGEST_URL=""           # optional; defaults to YouTube's HLS ingest for STREAM_KEY
-DURATION="12h"          # length of each broadcast (e.g. 12h, 11h50m, 3600)
+DURATION="11h55m"       # time live per broadcast (e.g. 11h55m, 6h, 3600); keep under 12h
 PRIVACY="unlisted"      # public | unlisted | private
 DESCRIPTION=""
 PLAYLIST_ID=""          # optional; playlist(s) to add each broadcast to (comma separated)
@@ -341,6 +341,11 @@ run_cycle() {
 
 # ---- main ------------------------------------------------------------------
 DURATION_SECS="$(to_seconds "$DURATION")" || exit 1
+# Broadcasts past 12h can get stuck on "Processing will begin shortly", and the
+# testing phase and ending add a little on top of DURATION.
+if (( DURATION_SECS > 12 * 3600 - 60 )); then
+  log "Warning: DURATION of ${DURATION_SECS}s leaves under a minute before YouTube's 12h limit; 11h55m is safer"
+fi
 
 if [[ -z "$STREAM_ID" ]]; then
   STREAM_ID="$(lookup_stream_id)"

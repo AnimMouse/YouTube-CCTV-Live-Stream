@@ -314,6 +314,22 @@ CAPTIONS="embedded"'
   finish
 }
 
+case_duration_warning() {
+  setup duration_warning <<<'DURATION="12h"'
+  run_for 2
+  output_has "Warning: DURATION of 43200s leaves under a minute"
+  finish
+}
+
+case_duration_default() {
+  setup duration_default </dev/null
+  sed -i '/^DURATION=/d' "$T/streams/cam.conf"
+  run_for 2
+  output_has "broadcasts of 42900s"
+  grep -q "Warning: DURATION" "$T/output" && fail "warned about the default DURATION"
+  finish
+}
+
 case_bad_duration() {
   setup bad_duration <<<'DURATION="12 hours"'
   run_to_exit

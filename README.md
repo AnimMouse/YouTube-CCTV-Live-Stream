@@ -1,7 +1,9 @@
 # YouTube CCTV livestream
 
 `livestream.sh` streams an RTSP camera to YouTube and starts a fresh broadcast
-every 12 hours (YouTube's DVR stops working after 12h). Broadcasts are titled
+just under every 12 hours (YouTube's DVR stops working after 12h, and longer
+broadcasts can get stuck on "Processing will begin shortly"). By default each
+broadcast is live for 11h55m (`DURATION`). Broadcasts are titled
 `<NAME> (yyyy-mm-dd hh-mm)`, e.g. `CCTV (2026-08-30 10-30)`.
 
 ## How a cycle works

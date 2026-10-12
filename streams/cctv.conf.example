@@ -22,8 +22,10 @@ STREAM_KEY="xxxx-xxxx-xxxx-xxxx-xxxx"
 # Optional: ingest URL. Defaults to YouTube's HLS ingest for STREAM_KEY.
 #INGEST_URL="rtmp://a.rtmp.youtube.com/live2/$STREAM_KEY"
 
-# Length of each broadcast before it's ended and a new one starts.
-DURATION="12h"
+# Time each broadcast stays live before it's ended and a new one starts.
+# Keep a margin under 12h: longer broadcasts can get stuck on "Processing will
+# begin shortly" and lose DVR.
+DURATION="11h55m"
 
 PRIVACY="unlisted"        # public | unlisted | private
 DESCRIPTION=""

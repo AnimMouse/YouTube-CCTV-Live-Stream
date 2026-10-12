@@ -17,7 +17,7 @@ User-facing docs are in `README.md`.
 - Title format is `<NAME> (yyyy-mm-dd hh-mm)`, e.g. `CCTV (2026-08-30 10-30)`.
 - Cycle order: start ffmpeg → wait for stream `active` → insert broadcast → apply `LATENCY`/`CAPTIONS` → bind → `testing` → `live` → add to playlists → wait `DURATION` → `complete` → stop ffmpeg.
   The broadcast is created only after the stream is active, so a camera outage doesn't burn API quota. Keep it that way.
-- `DURATION` counts from when the broadcast becomes live, not from when it's created.
+- `DURATION` counts from when the broadcast becomes live, not from when it's created. The default is 11h55m, not 12h: broadcasts slightly past 12h got stuck on "Processing will begin shortly" in real use (testing and ending add time on top of `DURATION`). The script warns when `DURATION` leaves under a minute of margin.
 - Several instances run at once (multiple cameras, possibly multiple accounts via `TOKEN_FILE`). Logs, state and locks are keyed by the config file's basename (`$ID`).
 - The current broadcast ID is kept in `state/<id>.broadcast`, so a killed run's broadcast is ended on the next start.
 
