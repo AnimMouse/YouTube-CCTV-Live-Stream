@@ -166,6 +166,40 @@ case_stream_never_active() {
   finish
 }
 
+case_live_timeout_deletes_broadcast() {
+  # The reported case: "live" accepted but the broadcast stays in testing.
+  setup live_timeout_deletes_broadcast </dev/null
+  export FAKE_LIVE_STUCK=1
+  run_for 5
+  unset FAKE_LIVE_STUCK
+  output_has "Timed out waiting for broadcast_status to become 'live' \(last: 'testing'\)"
+  actions | grep -q '^delete B1$' || fail "timed-out broadcast B1 not deleted"
+  actions | grep -q '^transition B1 complete$' && fail "never-live broadcast was completed instead of deleted"
+  [[ ! -e "$FAKE_DIR/broadcasts/B1" ]] || fail "B1 still exists"
+  finish
+}
+
+case_live_broadcast_never_deleted() {
+  # If ending a live broadcast fails, keep it (and its recording).
+  setup live_broadcast_never_deleted </dev/null
+  export FAKE_FAIL_COMPLETE=1
+  run_for 3
+  unset FAKE_FAIL_COMPLETE
+  expect "$(calls 'liveBroadcast delete')" 0 "deletes"
+  output_has "Could not end broadcast B1; end it in YouTube Studio"
+  finish
+}
+
+case_leftover_unlive_broadcast() {
+  setup leftover_unlive_broadcast </dev/null
+  mkdir -p "$FAKE_DIR/broadcasts"
+  echo testing >"$FAKE_DIR/broadcasts/B9"
+  echo B9 >"$T/state/cam.broadcast"
+  run_for 3
+  expect "$(actions | head -1)" "delete B9" "first action"
+  finish
+}
+
 case_stuck_broadcast_deleted() {
   setup stuck_broadcast_deleted </dev/null
   export FAKE_STUCK=1

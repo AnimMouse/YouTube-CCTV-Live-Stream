@@ -269,20 +269,33 @@ stop_ffmpeg() {
   FFMPEG_PID=""
 }
 
-# Ends a broadcast; deletes it instead if it never went live.
+# Ends a broadcast that went live, keeping its recording. One that never went
+# live is deleted instead: YouTube accepts "complete" for it but then leaves it
+# in Studio as a stray upcoming stream.
 end_broadcast() {
-  local id="$1"
+  local id="$1" status
   [[ -n "$id" ]] || return 0
-  log "Ending broadcast $id"
-  if ! transition "$id" complete; then
-    local status
-    status="$(broadcast_status "$id")"
-    case "$status" in
-      complete|revoked|"") ;;
-      *) log "Deleting broadcast $id (status: $status)"
-         yutu liveBroadcast delete --yes --ids "$id" >/dev/null ;;
-    esac
-  fi
+  status="$(broadcast_status "$id")"
+  case "$status" in
+    complete|revoked) ;;
+    live|liveStarting)
+      log "Ending broadcast $id"
+      # Never delete here, even if this fails: that would lose the recording.
+      transition "$id" complete || log "Could not end broadcast $id; end it in YouTube Studio"
+      ;;
+    "")
+      # Status unknown (API error): try ending it, then deleting it.
+      log "Ending broadcast $id"
+      transition "$id" complete ||
+        yutu liveBroadcast delete --yes --ids "$id" >/dev/null ||
+        log "Could not end or delete broadcast $id; check YouTube Studio"
+      ;;
+    *)
+      log "Deleting broadcast $id (never went live, status: $status)"
+      yutu liveBroadcast delete --yes --ids "$id" >/dev/null ||
+        log "Could not delete broadcast $id; delete it in YouTube Studio"
+      ;;
+  esac
   rm -f "$STATE_FILE"
 }
 

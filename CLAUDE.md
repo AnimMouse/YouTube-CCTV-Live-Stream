@@ -31,6 +31,9 @@ User-facing docs are in `README.md`.
   - Secrets go through stdin (`--data @-`) and a file descriptor (`-H @<(...)`), not arguments, so they don't show up in `ps`.
   - `liveBroadcasts.update` replaces all of `contentDetails`, so it GETs the current values, merges, and drops read-only `boundStream*` and the deprecated `enableClosedCaptions`.
   - It must run before going live. Failures are logged, not fatal.
+- **Ending a broadcast depends on whether it went live** (`end_broadcast` checks its status first):
+  - Live: transition to `complete`, and never delete it, even if that fails, since deleting would lose the recording.
+  - Never went live (`ready`/`testing`/…): delete it. YouTube accepts `complete` for these but leaves them in Studio as stray "upcoming" streams (seen in real use when going live timed out in `testing`).
 - **`yutu playlistItem insert` requires `--channelId`.** It comes from `snippet.channelId` in the broadcast-insert response.
 - **`log()` writes to stderr on purpose.** Many functions return values via `$(...)`, so logging to stdout would corrupt them.
 - **ffmpeg is stopped with SIGTERM, not SIGINT.** Non-interactive bash starts background jobs with SIGINT ignored.
@@ -55,7 +58,7 @@ test/run.sh rotation shutdown  # selected cases
 
 Tests run `livestream.sh` against fakes in `test/bin/` (put first on `PATH`), so no YouTube account is needed:
 
-- `test/bin/yutu` records every call in `$FAKE_DIR/calls`, returns JSON shaped like the real API, and enforces the real transition rules (`ready→testing→live→complete`; anything else fails like the API). It requires `--yes` on mutating commands. It reports the stream `active` only while a fake ffmpeg is running. Behaviour knobs (`FAKE_STREAM_STATUS`, `FAKE_REJECT_TESTING`, `FAKE_STUCK`, `FAKE_FAIL_PLAYLIST`, `FAKE_NO_STREAM`) are documented at the top of the file.
+- `test/bin/yutu` records every call in `$FAKE_DIR/calls`, returns JSON shaped like the real API, and enforces the real transition rules (`ready→testing→live→complete`; anything else fails like the API). It requires `--yes` on mutating commands. It reports the stream `active` only while a fake ffmpeg is running. Like YouTube, it accepts `complete` on a never-live broadcast without completing it. Behaviour knobs (`FAKE_STREAM_STATUS`, `FAKE_REJECT_TESTING`, `FAKE_STUCK`, `FAKE_LIVE_STUCK`, `FAKE_FAIL_COMPLETE`, `FAKE_FAIL_PLAYLIST`, `FAKE_NO_STREAM`) are documented at the top of the file.
 - `test/bin/curl` fakes Google's OAuth token endpoint and `liveBroadcasts` GET/PUT. PUT bodies go to `$FAKE_DIR/put.json` and the token form to `$FAKE_DIR/token.form`. It checks the bearer token, and its knobs are `FAKE_TOKEN_FAIL` and `FAKE_API_FAIL`. Test credentials contain `*-SECRET` values, so a case can assert they never appear in arguments.
 - `test/bin/ffmpeg` logs `start`/`term`/`exit` events to `$FAKE_DIR/ffmpeg.events`. `FAKE_FFMPEG_LIFE=<s>` makes it exit early (crash), and `0` simulates an unreachable camera.
 - Each case in `test/run.sh` (`case_<name>`) gets a temp dir with a config using short timeouts (`POLL_INTERVAL=1`, `FFMPEG_CHECK_INTERVAL=1`, etc.). Extra config lines are passed to `setup` on stdin. Cases assert on the recorded calls (`actions` condenses them to e.g. `transition B1 live`), the ffmpeg events and the script output. `finish` also fails a case that leaves an ffmpeg running.
